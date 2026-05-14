@@ -1,3 +1,3 @@
-# App Visita Técnica
+# App de Visita Técnica
 
-Versão com exportação de relatório em PDF.
+Versão visual com exportação em PDF.

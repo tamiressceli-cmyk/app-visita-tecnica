@@ -279,45 +279,254 @@ def generate_pdf(data):
     buffer.close()
     return pdf
 
+
+CUSTOM_CSS = """
+<style>
+:root {
+    --primary: #243B53;
+    --secondary: #486581;
+    --accent: #2F80ED;
+    --bg-soft: #F4F7FB;
+    --card: #FFFFFF;
+    --text: #1F2933;
+    --muted: #6B7280;
+}
+
+.main .block-container {
+    padding-top: 1.5rem;
+    padding-bottom: 2rem;
+    max-width: 1180px;
+}
+
+.hero {
+    background: linear-gradient(135deg, #243B53 0%, #486581 58%, #2F80ED 100%);
+    border-radius: 24px;
+    padding: 28px 32px;
+    margin-bottom: 22px;
+    color: white;
+    box-shadow: 0 12px 32px rgba(36, 59, 83, 0.18);
+}
+.hero h1 {
+    margin: 0;
+    font-size: 2rem;
+    letter-spacing: -0.03em;
+}
+.hero p {
+    margin-top: 8px;
+    font-size: 1rem;
+    opacity: 0.92;
+}
+.badge-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-top: 14px;
+}
+.badge {
+    background: rgba(255,255,255,0.16);
+    border: 1px solid rgba(255,255,255,0.22);
+    border-radius: 999px;
+    padding: 6px 12px;
+    font-size: 0.85rem;
+}
+.metric-card {
+    background: #FFFFFF;
+    border: 1px solid #E5E7EB;
+    border-radius: 18px;
+    padding: 18px 18px;
+    box-shadow: 0 8px 20px rgba(15, 23, 42, 0.06);
+    min-height: 96px;
+}
+.metric-card .label {
+    color: #6B7280;
+    font-size: 0.85rem;
+    margin-bottom: 6px;
+}
+.metric-card .value {
+    color: #111827;
+    font-size: 1.45rem;
+    font-weight: 700;
+}
+.section-card {
+    background: #FFFFFF;
+    border: 1px solid #E5E7EB;
+    border-radius: 20px;
+    padding: 22px;
+    margin: 8px 0 20px 0;
+    box-shadow: 0 8px 22px rgba(15, 23, 42, 0.05);
+}
+.section-title {
+    font-size: 1.35rem;
+    font-weight: 750;
+    color: #1F2937;
+    margin-bottom: 6px;
+}
+.section-subtitle {
+    color: #6B7280;
+    margin-bottom: 16px;
+}
+.small-note {
+    color: #6B7280;
+    font-size: 0.88rem;
+}
+[data-testid="stSidebar"] {
+    background: #F8FAFC;
+}
+[data-testid="stSidebar"] h1,
+[data-testid="stSidebar"] h2,
+[data-testid="stSidebar"] h3 {
+    color: #243B53;
+}
+.stButton>button {
+    border-radius: 12px;
+    min-height: 42px;
+    font-weight: 650;
+}
+.stDownloadButton>button {
+    border-radius: 12px;
+    min-height: 42px;
+    font-weight: 650;
+}
+div[data-testid="stExpander"] {
+    border: 1px solid #E5E7EB;
+    border-radius: 14px;
+    overflow: hidden;
+    box-shadow: 0 4px 12px rgba(15, 23, 42, 0.035);
+}
+</style>
+"""
+
+SECTION_ICONS = {
+    "Início": "🏠",
+    "Dados da Visita": "📝",
+    "Perguntas da Gestão": "💬",
+    "Matriz de Observação": "🔎",
+    "Priorização": "🛠️",
+    "Síntese Executiva": "📌",
+    "Registro Fotográfico": "📷",
+    "Exportar / Carregar": "📄",
+}
+
+
+def count_filled_values(obj):
+    if isinstance(obj, dict):
+        return sum(count_filled_values(v) for v in obj.values())
+    if isinstance(obj, list):
+        return sum(count_filled_values(v) for v in obj)
+    return 1 if str(obj or "").strip() else 0
+
+
+def completion_stats(v):
+    dados_ok = count_filled_values(v.get("dados_visita", {}))
+    perguntas_ok = count_filled_values(v.get("perguntas_gestao", {}))
+    obs_ok = len([x for x in v.get("observacoes", {}).values() if x.get("evidencias") or x.get("classificacao") or x.get("nota")])
+    prio_ok = len([x for x in v.get("priorizacoes", []) if any(str(y or '').strip() for y in x.values())])
+    sintese_ok = count_filled_values(v.get("sintese", {}))
+    fotos_ok = len(v.get("fotos", []))
+    total = min(100, round((dados_ok/6)*15 + (perguntas_ok/7)*15 + (obs_ok/len(OBSERVACAO_ITENS))*30 + min(prio_ok,3)/3*15 + (sintese_ok/7)*15 + min(fotos_ok,5)/5*10))
+    return total, obs_ok, prio_ok, fotos_ok
+
+
+def render_hero(v):
+    progresso, obs_ok, prio_ok, fotos_ok = completion_stats(v)
+    unidade = v.get("dados_visita", {}).get("Unidade visitada") or "Visita técnica"
+    municipio = v.get("dados_visita", {}).get("Município") or "Município não informado"
+    st.markdown(f"""
+    <div class="hero">
+        <h1>Visita Técnica | Infraestrutura Educacional</h1>
+        <p>{h(unidade)} · {h(municipio)}</p>
+        <div class="badge-row">
+            <span class="badge">ID: {h(v.get('id'))}</span>
+            <span class="badge">Progresso estimado: {progresso}%</span>
+            <span class="badge">Observações: {obs_ok}</span>
+            <span class="badge">Fotos: {fotos_ok}</span>
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
+
+
+def metric_card(label, value):
+    st.markdown(f"""
+    <div class="metric-card">
+      <div class="label">{h(label)}</div>
+      <div class="value">{h(value)}</div>
+    </div>
+    """, unsafe_allow_html=True)
+
+
+def section_header(title, subtitle=""):
+    st.markdown(f"""
+    <div class="section-card">
+      <div class="section-title">{h(title)}</div>
+      <div class="section-subtitle">{h(subtitle)}</div>
+    </div>
+    """, unsafe_allow_html=True)
+
 if "visita" not in st.session_state:
     st.session_state.visita = new_state()
 
-st.title("🏫 Visita Técnica | Infraestrutura Educacional")
-st.caption("MVP flexível: preencha as seções em qualquer ordem, salve parcialmente e gere relatório.")
+st.markdown(CUSTOM_CSS, unsafe_allow_html=True)
 
 with st.sidebar:
-    st.header("Navegação")
-    page = st.radio("Escolha uma seção", ["Dados da Visita", "Perguntas da Gestão", "Matriz de Observação", "Priorização", "Síntese Executiva", "Registro Fotográfico", "Exportar / Carregar"], label_visibility="collapsed")
+    st.markdown("### Visita Técnica")
+    st.caption("Protótipo flexível para registro em campo")
+    opcoes = ["Início", "Dados da Visita", "Perguntas da Gestão", "Matriz de Observação", "Priorização", "Síntese Executiva", "Registro Fotográfico", "Exportar / Carregar"]
+    page = st.radio("Escolha uma seção", opcoes, format_func=lambda x: f"{SECTION_ICONS.get(x, '')} {x}", label_visibility="collapsed")
     st.divider()
-    st.write(f"ID da visita: `{st.session_state.visita['id']}`")
-    if st.button("Salvar agora", use_container_width=True):
+    st.markdown(f"**ID da visita:** `{st.session_state.visita['id']}`")
+    progresso, obs_ok, prio_ok, fotos_ok = completion_stats(st.session_state.visita)
+    st.progress(progresso / 100, text=f"Progresso estimado: {progresso}%")
+    if st.button("💾 Salvar agora", use_container_width=True):
         save_state()
-    if st.button("Nova visita", use_container_width=True):
+    if st.button("➕ Nova visita", use_container_width=True):
         st.session_state.visita = new_state()
         st.rerun()
+    st.divider()
+    st.caption("Dica: salve após concluir cada seção.")
 
 v = st.session_state.visita
+render_hero(v)
 
-if page == "Dados da Visita":
-    st.subheader("Dados da visita")
+if page == "Início":
+    progresso, obs_ok, prio_ok, fotos_ok = completion_stats(v)
+    c1, c2, c3, c4 = st.columns(4)
+    with c1: metric_card("Progresso", f"{progresso}%")
+    with c2: metric_card("Itens observados", obs_ok)
+    with c3: metric_card("Priorizações", prio_ok)
+    with c4: metric_card("Fotos", fotos_ok)
+    st.markdown("### Como usar")
+    st.info("Preencha as seções na ordem que preferir. Durante a visita, use o menu lateral para alternar entre dados, observações, fotos e síntese.")
+    st.markdown("### Recomendações rápidas")
+    c1, c2 = st.columns(2)
+    with c1:
+        st.markdown("""- Use **Salvar agora** após cada bloco importante.
+- Gere o **PDF** antes de encerrar a visita.
+- Registre fotos com observações curtas.""")
+    with c2:
+        st.markdown("""- Use a matriz para notas de 1 a 5.
+- Registre prioridades claras.
+- Use a síntese para consolidar encaminhamentos.""")
+
+elif page == "Dados da Visita":
+    section_header("Dados da visita", "Identificação da unidade, responsável e contexto da visita.")
     fields = ["Unidade visitada", "Município", "Data e horário", "Analista responsável", "Gestor(a) local que acompanhou", "Segmentos atendidos / nº aproximado de estudantes"]
     for field in fields:
         v["dados_visita"][field] = st.text_input(field, value=v["dados_visita"].get(field, ""))
 
 elif page == "Perguntas da Gestão":
-    st.subheader("Perguntas iniciais para a gestão")
+    section_header("Perguntas iniciais para a gestão", "Use este espaço para registrar percepções da equipe local.")
     for q in PERGUNTAS_GESTAO:
         v["perguntas_gestao"][q] = st.text_area(q, value=v["perguntas_gestao"].get(q, ""), height=90)
 
 elif page == "Matriz de Observação":
-    st.subheader("Matriz de observação geral da infraestrutura")
+    section_header("Matriz de observação geral da infraestrutura", "Avalie os ambientes por dimensão, nota, evidências e classificação da adequação.")
     filtro = st.selectbox("Filtrar por dimensão", ["Todas"] + sorted(set(d for d, _ in OBSERVACAO_ITENS)))
     for idx, (dim, item) in enumerate(OBSERVACAO_ITENS):
         if filtro != "Todas" and dim != filtro:
             continue
         key = str(idx)
         atual = v["observacoes"].get(key, {"dimensao": dim, "item": item, "nota": 3, "classificacao": "", "evidencias": ""})
-        with st.expander(f"{dim} — {item[:80]}", expanded=False):
+        with st.expander(f"{SECTION_ICONS.get("Matriz de Observação")} {dim} — {item[:80]}", expanded=False):
             c1, c2 = st.columns([1, 2])
             with c1:
                 atual["nota"] = st.slider("Nota", 1, 5, int(atual.get("nota", 3)), key=f"nota_{key}")
@@ -327,7 +536,7 @@ elif page == "Matriz de Observação":
             v["observacoes"][key] = atual
 
 elif page == "Priorização":
-    st.subheader("Ficha de priorização das pequenas adequações")
+    section_header("Priorização das pequenas adequações", "Registre os problemas ou oportunidades com maior potencial de impacto.")
     qtd = st.number_input("Quantidade de adequações a registrar", min_value=1, max_value=20, value=max(1, len(v["priorizacoes"])), step=1)
     while len(v["priorizacoes"]) < qtd:
         v["priorizacoes"].append({})
@@ -342,13 +551,13 @@ elif page == "Priorização":
             p["prazo"] = st.text_input("Prazo/encaminhamento", value=p.get("prazo", ""), key=f"prazo_{i}")
 
 elif page == "Síntese Executiva":
-    st.subheader("Síntese executiva e plano de ação pós-visita")
+    section_header("Síntese executiva e plano de ação", "Consolide prioridades, encaminhamentos e ações possíveis em curto prazo.")
     fields = ["Síntese da visita", "Prioridade 1", "Prioridade 2", "Prioridade 3", "Demandas para manutenção/engenharia", "Ações possíveis em até 30 dias", "Responsável pelo retorno à unidade"]
     for field in fields:
         v["sintese"][field] = st.text_area(field, value=v["sintese"].get(field, ""), height=80)
 
 elif page == "Registro Fotográfico":
-    st.subheader("Registro fotográfico orientado")
+    section_header("Registro fotográfico orientado", "Inclua imagens por categoria para apoiar evidências e encaminhamentos.")
     categoria = st.selectbox("Categoria da foto", CATEGORIAS_FOTO)
     obs = st.text_input("Observação sobre a foto")
     uploaded = st.file_uploader("Enviar foto", type=["png", "jpg", "jpeg"])
@@ -362,7 +571,7 @@ elif page == "Registro Fotográfico":
         st.write(f"- {foto['categoria']} — {foto['arquivo']} — {foto.get('observacao','')}")
 
 elif page == "Exportar / Carregar":
-    st.subheader("Exportar, carregar ou continuar visita")
+    section_header("Exportar, carregar ou continuar visita", "Gere o PDF, salve os dados ou retome visitas salvas nesta instalação.")
     if st.button("Gerar relatório PDF"):
         save_state()
         pdf = generate_pdf(v)
