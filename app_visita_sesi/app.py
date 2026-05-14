@@ -114,7 +114,7 @@ def render_report(data):
     return f"""
 <!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><title>Relatório de Visita Técnica</title>
 <style>body{{font-family:Arial,sans-serif;margin:32px;line-height:1.45}} table{{border-collapse:collapse;width:100%;margin:12px 0}}td,th{{border:1px solid #999;padding:6px;vertical-align:top}} h1,h2{{color:#333}}</style></head><body>
-<h1>Relatório de Visita Técnica | Infraestrutura Educacional | SESI Minas</h1>
+<h1>Relatório de Visita Técnica | Infraestrutura Educacional</h1>
 <h2>Dados da visita</h2>
 <p><b>Unidade:</b> {h(dados.get('Unidade visitada'))}<br><b>Município:</b> {h(dados.get('Município'))}<br><b>Data e horário:</b> {h(dados.get('Data e horário'))}<br><b>Analista:</b> {h(dados.get('Analista responsável'))}<br><b>Gestor(a) local:</b> {h(dados.get('Gestor(a) local que acompanhou'))}<br><b>Segmentos / estudantes:</b> {h(dados.get('Segmentos atendidos / nº aproximado de estudantes'))}</p>
 <h2>Perguntas iniciais à gestão</h2>{perguntas}
