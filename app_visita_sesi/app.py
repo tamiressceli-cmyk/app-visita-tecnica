@@ -12,7 +12,7 @@ REPORT_DIR = DATA_DIR / "relatorios"
 for p in [DATA_DIR, PHOTO_DIR, REPORT_DIR]:
     p.mkdir(parents=True, exist_ok=True)
 
-st.set_page_config(page_title="Visita Técnica SESI", page_icon="🏫", layout="wide")
+st.set_page_config(page_title="Visita Técnica", page_icon="🏫", layout="wide")
 
 OBSERVACAO_ITENS = [
     ("Conservação", "Salas de aula: pintura, piso, paredes, portas, janelas, quadros e mobiliário."),
@@ -130,7 +130,7 @@ def render_report(data):
 if "visita" not in st.session_state:
     st.session_state.visita = new_state()
 
-st.title("🏫 Visita Técnica SESI | Infraestrutura Educacional")
+st.title("🏫 Visita Técnica | Infraestrutura Educacional")
 st.caption("MVP flexível: preencha as seções em qualquer ordem, salve parcialmente e gere relatório.")
 
 with st.sidebar:
