@@ -4,6 +4,14 @@ import uuid
 from datetime import datetime
 from pathlib import Path
 from html import escape
+from io import BytesIO
+
+from reportlab.lib import colors
+from reportlab.lib.enums import TA_CENTER
+from reportlab.lib.pagesizes import A4
+from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+from reportlab.lib.units import cm
+from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, PageBreak, Image
 
 BASE_DIR = Path(__file__).parent
 DATA_DIR = BASE_DIR / "dados"
@@ -125,7 +133,151 @@ def render_report(data):
 <p><b>Demandas para manutenção/engenharia:</b> {h(sint.get('Demandas para manutenção/engenharia'))}<br><b>Ações possíveis em até 30 dias:</b> {h(sint.get('Ações possíveis em até 30 dias'))}<br><b>Responsável pelo retorno:</b> {h(sint.get('Responsável pelo retorno à unidade'))}</p>
 <h2>Registro fotográfico</h2><ul>{fotos}</ul>
 <p><small>Gerado em {datetime.now().strftime('%d/%m/%Y %H:%M')}.</small></p>
+
 </body></html>"""
+
+
+def _safe_text(value):
+    return str(value or "").replace("\n", "<br/>")
+
+
+def _p(value, style):
+    return Paragraph(_safe_text(value), style)
+
+
+def generate_pdf(data):
+    """Gera um relatório em PDF em memória para download no Streamlit."""
+    buffer = BytesIO()
+    doc = SimpleDocTemplate(
+        buffer,
+        pagesize=A4,
+        rightMargin=1.5 * cm,
+        leftMargin=1.5 * cm,
+        topMargin=1.5 * cm,
+        bottomMargin=1.5 * cm,
+        title="Relatório de Visita Técnica",
+    )
+
+    styles = getSampleStyleSheet()
+    styles.add(ParagraphStyle(name="TitleCenter", parent=styles["Title"], alignment=TA_CENTER, fontSize=16, leading=20, spaceAfter=12))
+    styles.add(ParagraphStyle(name="Section", parent=styles["Heading2"], fontSize=12, leading=15, spaceBefore=10, spaceAfter=6))
+    styles.add(ParagraphStyle(name="Small", parent=styles["BodyText"], fontSize=8, leading=10))
+    styles.add(ParagraphStyle(name="Cell", parent=styles["BodyText"], fontSize=7, leading=9))
+
+    story = []
+    dados = data.get("dados_visita", {})
+    sint = data.get("sintese", {})
+
+    story.append(Paragraph("Relatório de Visita Técnica", styles["TitleCenter"]))
+    story.append(Paragraph("Infraestrutura Educacional", styles["Heading3"]))
+    story.append(Spacer(1, 0.2 * cm))
+
+    story.append(Paragraph("Dados da visita", styles["Section"]))
+    dados_table = [
+        [_p("Unidade visitada", styles["Cell"]), _p(dados.get("Unidade visitada"), styles["Cell"])],
+        [_p("Município", styles["Cell"]), _p(dados.get("Município"), styles["Cell"])],
+        [_p("Data e horário", styles["Cell"]), _p(dados.get("Data e horário"), styles["Cell"])],
+        [_p("Analista responsável", styles["Cell"]), _p(dados.get("Analista responsável"), styles["Cell"])],
+        [_p("Gestor(a) local que acompanhou", styles["Cell"]), _p(dados.get("Gestor(a) local que acompanhou"), styles["Cell"])],
+        [_p("Segmentos / estudantes", styles["Cell"]), _p(dados.get("Segmentos atendidos / nº aproximado de estudantes"), styles["Cell"])],
+    ]
+    t = Table(dados_table, colWidths=[5 * cm, 12 * cm], repeatRows=0)
+    t.setStyle(TableStyle([
+        ("GRID", (0, 0), (-1, -1), 0.25, colors.grey),
+        ("BACKGROUND", (0, 0), (0, -1), colors.whitesmoke),
+        ("VALIGN", (0, 0), (-1, -1), "TOP"),
+        ("LEFTPADDING", (0, 0), (-1, -1), 4),
+        ("RIGHTPADDING", (0, 0), (-1, -1), 4),
+    ]))
+    story.append(t)
+
+    story.append(Paragraph("Perguntas iniciais à gestão", styles["Section"]))
+    perguntas = data.get("perguntas_gestao", {})
+    if any(perguntas.values()):
+        for pergunta, resposta in perguntas.items():
+            if resposta:
+                story.append(Paragraph(f"<b>{_safe_text(pergunta)}</b>", styles["BodyText"]))
+                story.append(Paragraph(_safe_text(resposta), styles["BodyText"]))
+                story.append(Spacer(1, 0.15 * cm))
+    else:
+        story.append(Paragraph("Sem registros.", styles["BodyText"]))
+
+    story.append(Paragraph("Matriz de observação", styles["Section"]))
+    obs_data = [[_p("Dimensão", styles["Cell"]), _p("Item", styles["Cell"]), _p("Nota", styles["Cell"]), _p("Classificação", styles["Cell"]), _p("Evidências", styles["Cell"])] ]
+    for item in data.get("observacoes", {}).values():
+        if item.get("evidencias") or item.get("classificacao") or item.get("nota"):
+            obs_data.append([
+                _p(item.get("dimensao"), styles["Cell"]),
+                _p(item.get("item"), styles["Cell"]),
+                _p(item.get("nota"), styles["Cell"]),
+                _p(item.get("classificacao"), styles["Cell"]),
+                _p(item.get("evidencias"), styles["Cell"]),
+            ])
+    if len(obs_data) == 1:
+        story.append(Paragraph("Sem registros.", styles["BodyText"]))
+    else:
+        t = Table(obs_data, colWidths=[2.7 * cm, 5.2 * cm, 1.1 * cm, 3.2 * cm, 4.8 * cm], repeatRows=1)
+        t.setStyle(TableStyle([
+            ("GRID", (0, 0), (-1, -1), 0.25, colors.grey),
+            ("BACKGROUND", (0, 0), (-1, 0), colors.whitesmoke),
+            ("VALIGN", (0, 0), (-1, -1), "TOP"),
+            ("FONTSIZE", (0, 0), (-1, -1), 7),
+        ]))
+        story.append(t)
+
+    story.append(Paragraph("Priorização das adequações", styles["Section"]))
+    pri_data = [[_p("Ambiente", styles["Cell"]), _p("Problema/oportunidade", styles["Cell"]), _p("Adequação proposta", styles["Cell"]), _p("Classificação", styles["Cell"]), _p("Impacto", styles["Cell"]), _p("Prazo", styles["Cell"])] ]
+    for p in data.get("priorizacoes", []):
+        if any(p.values()):
+            pri_data.append([
+                _p(p.get("ambiente"), styles["Cell"]),
+                _p(p.get("problema"), styles["Cell"]),
+                _p(p.get("adequacao"), styles["Cell"]),
+                _p(p.get("classificacao"), styles["Cell"]),
+                _p(p.get("impacto"), styles["Cell"]),
+                _p(p.get("prazo"), styles["Cell"]),
+            ])
+    if len(pri_data) == 1:
+        story.append(Paragraph("Sem registros.", styles["BodyText"]))
+    else:
+        t = Table(pri_data, colWidths=[2.4 * cm, 3.2 * cm, 3.2 * cm, 2.7 * cm, 3.2 * cm, 2.3 * cm], repeatRows=1)
+        t.setStyle(TableStyle([
+            ("GRID", (0, 0), (-1, -1), 0.25, colors.grey),
+            ("BACKGROUND", (0, 0), (-1, 0), colors.whitesmoke),
+            ("VALIGN", (0, 0), (-1, -1), "TOP"),
+        ]))
+        story.append(t)
+
+    story.append(Paragraph("Síntese executiva", styles["Section"]))
+    for campo in ["Síntese da visita", "Prioridade 1", "Prioridade 2", "Prioridade 3", "Demandas para manutenção/engenharia", "Ações possíveis em até 30 dias", "Responsável pelo retorno à unidade"]:
+        if sint.get(campo):
+            story.append(Paragraph(f"<b>{campo}:</b> {_safe_text(sint.get(campo))}", styles["BodyText"]))
+            story.append(Spacer(1, 0.1 * cm))
+
+    story.append(Paragraph("Registro fotográfico", styles["Section"]))
+    fotos = data.get("fotos", [])
+    if not fotos:
+        story.append(Paragraph("Sem fotos registradas.", styles["BodyText"]))
+    else:
+        for foto in fotos:
+            story.append(Paragraph(f"<b>{_safe_text(foto.get('categoria'))}</b> — {_safe_text(foto.get('observacao'))}", styles["BodyText"]))
+            img_path = PHOTO_DIR / str(foto.get("arquivo", ""))
+            if img_path.exists():
+                try:
+                    story.append(Image(str(img_path), width=8 * cm, height=6 * cm, kind="proportional"))
+                except Exception:
+                    story.append(Paragraph(f"Arquivo: {_safe_text(foto.get('arquivo'))}", styles["Small"]))
+            else:
+                story.append(Paragraph(f"Arquivo: {_safe_text(foto.get('arquivo'))}", styles["Small"]))
+            story.append(Spacer(1, 0.2 * cm))
+
+    story.append(Spacer(1, 0.4 * cm))
+    story.append(Paragraph(f"Gerado em {datetime.now().strftime('%d/%m/%Y %H:%M')}.", styles["Small"]))
+
+    doc.build(story)
+    pdf = buffer.getvalue()
+    buffer.close()
+    return pdf
 
 if "visita" not in st.session_state:
     st.session_state.visita = new_state()
@@ -211,13 +363,13 @@ elif page == "Registro Fotográfico":
 
 elif page == "Exportar / Carregar":
     st.subheader("Exportar, carregar ou continuar visita")
-    if st.button("Gerar relatório HTML"):
+    if st.button("Gerar relatório PDF"):
         save_state()
-        html = render_report(v)
-        out = REPORT_DIR / f"relatorio_visita_{v['id']}.html"
-        out.write_text(html, encoding="utf-8")
-        st.success("Relatório gerado.")
-        st.download_button("Baixar relatório HTML", data=html, file_name=out.name, mime="text/html")
+        pdf = generate_pdf(v)
+        out = REPORT_DIR / f"relatorio_visita_{v['id']}.pdf"
+        out.write_bytes(pdf)
+        st.success("Relatório PDF gerado.")
+        st.download_button("Baixar relatório PDF", data=pdf, file_name=out.name, mime="application/pdf")
     st.divider()
     st.write("Visitas salvas nesta instalação:")
     saved = sorted(DATA_DIR.glob("visita_*.json"), reverse=True)
